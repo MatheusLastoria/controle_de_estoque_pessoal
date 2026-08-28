@@ -94,7 +94,7 @@ function LoginScreen({ onLogin }) {
             autoFocus
             value={code}
             onChange={(e) => { setCode(e.target.value); setError(""); }}
-            placeholder="Ex: RC003"
+            placeholder=""
             className={inputCls + " text-center tracking-widest font-mono uppercase mb-3"}
           />
           {error && (
