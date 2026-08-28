@@ -7,7 +7,12 @@ import {
 import { storage } from "./storage";
 
 const ACCESS_CODES = ["RC003", "IL001", "ST002"];
-const STORAGE_KEY = "dados-sistema";
+const STORAGE_KEY_PREFIX = "dados-sistema";
+
+// Cada código de acesso tem sua própria "gaveta" de dados, isolada das demais.
+function storageKeyFor(user) {
+  return `${STORAGE_KEY_PREFIX}:${user}`;
+}
 
 const emptyData = () => ({ clientes: [], produtos: [], vendas: [], movimentacoes: [] });
 
@@ -772,16 +777,18 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!user) return;
+    setLoading(true);
     (async () => {
       try {
-        const res = await storage.get(STORAGE_KEY);
+        const res = await storage.get(storageKeyFor(user));
         setData(res ? JSON.parse(res.value) : emptyData());
       } catch {
         setData(emptyData());
       }
       setLoading(false);
     })();
-  }, []);
+  }, [user]);
 
   async function mutate(updater) {
     setData((prev) => {
@@ -791,7 +798,7 @@ export default function App() {
       } catch {
         return prev;
       }
-      storage.set(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
+      storage.set(storageKeyFor(user), JSON.stringify(next)).catch(() => {});
       return next;
     });
   }
