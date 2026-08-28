@@ -9,6 +9,12 @@ import { storage } from "./storage";
 const ACCESS_CODES = ["RC003", "IL001", "ST002"];
 const STORAGE_KEY_PREFIX = "dados-sistema";
 
+// RC003 é a única conta que opera com estoque de filamentos de impressora 3D,
+// então ela ganha campos e recursos extras que os demais códigos não têm.
+const CODIGO_FILAMENTOS = "RC003";
+const MATERIAIS_FILAMENTO = ["PLA", "PETG", "ABS", "ASA", "TPR", "TPU"];
+const DIAMETROS_FILAMENTO = ["1.75mm", "2.85mm"];
+
 // Cada código de acesso tem sua própria "gaveta" de dados, isolada das demais.
 function storageKeyFor(user) {
   return `${STORAGE_KEY_PREFIX}:${user}`;
@@ -168,8 +174,9 @@ function PageHeader({ title, subtitle, action }) {
 }
 
 // ---------- Início ----------
-function Inicio({ data }) {
+function Inicio({ data, user }) {
   const { clientes, produtos, vendas } = data;
+  const isFilamentos = user === CODIGO_FILAMENTOS;
   const estoqueBaixo = produtos.filter((p) => p.quantidade <= 5);
   const hoje = new Date();
   const vendasMes = vendas.filter((v) => {
@@ -180,14 +187,27 @@ function Inicio({ data }) {
 
   const cards = [
     { label: "Clientes cadastrados", value: clientes.length, icon: Users },
-    { label: "Produtos cadastrados", value: produtos.length, icon: Package },
+    { label: isFilamentos ? "Filamentos cadastrados" : "Produtos cadastrados", value: produtos.length, icon: Package },
     { label: "Vendas no mês", value: vendasMes.length, icon: ShoppingCart },
     { label: "Faturado no mês", value: formatBRL(totalMes), icon: Boxes },
   ];
 
+  // Recurso exclusivo do RC003: resumo do estoque agrupado por material.
+  const porMaterial = isFilamentos
+    ? MATERIAIS_FILAMENTO.map((m) => {
+        const itens = produtos.filter((p) => (p.material || "") === m);
+        return {
+          material: m,
+          rolos: itens.length,
+          quantidade: itens.reduce((s, p) => s + (p.quantidade || 0), 0),
+          pesoTotal: itens.reduce((s, p) => s + (p.quantidade || 0) * (Number(p.pesoKg) || 0), 0),
+        };
+      }).filter((m) => m.rolos > 0)
+    : [];
+
   return (
     <div>
-      <PageHeader title="Início" subtitle="Resumo geral do sistema" />
+      <PageHeader title="Início" subtitle={isFilamentos ? "Resumo do estoque de filamentos" : "Resumo geral do sistema"} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {cards.map((c) => {
           const Icon = c.icon;
@@ -201,9 +221,30 @@ function Inicio({ data }) {
         })}
       </div>
 
+      {isFilamentos && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-8">
+          <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <Boxes size={16} className="text-amber-500" /> Estoque por material
+          </h3>
+          {porMaterial.length === 0 ? (
+            <p className="text-sm text-slate-400">Nenhum filamento cadastrado ainda.</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {porMaterial.map((m) => (
+                <div key={m.material} className="border border-slate-200 rounded-lg p-3">
+                  <div className="text-xs font-semibold text-amber-600">{m.material}</div>
+                  <div className="text-sm text-slate-700">{m.rolos} produto(s) · {m.quantidade} rolo(s)</div>
+                  <div className="text-xs text-slate-400">{m.pesoTotal.toFixed(2)} kg em estoque</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-          <AlertTriangle size={16} className="text-red-500" /> Produtos com estoque baixo (≤ 5 un.)
+          <AlertTriangle size={16} className="text-red-500" /> {isFilamentos ? "Filamentos" : "Produtos"} com estoque baixo (≤ 5 un.)
         </h3>
         {estoqueBaixo.length === 0 ? (
           <p className="text-sm text-slate-400">Nenhum produto com estoque baixo. 👍</p>
@@ -211,7 +252,10 @@ function Inicio({ data }) {
           <ul className="divide-y divide-slate-100">
             {estoqueBaixo.map((p) => (
               <li key={p.id} className="py-2 flex justify-between text-sm">
-                <span className="text-slate-700">{p.nome} <span className="text-slate-400">({p.codigo})</span></span>
+                <span className="text-slate-700">
+                  {p.nome} <span className="text-slate-400">({p.codigo})</span>
+                  {isFilamentos && p.material && <span className="text-slate-400"> · {p.material}{p.cor ? ` ${p.cor}` : ""}</span>}
+                </span>
                 <span className="font-semibold text-red-600">{p.quantidade} un.</span>
               </li>
             ))}
@@ -334,35 +378,49 @@ function ClientesTab({ data, mutate }) {
 }
 
 // ---------- Produtos ----------
-function ProdutosTab({ data, mutate }) {
+const emptyFormProduto = () => ({
+  nome: "", codigo: "", categoria: "", preco: "", quantidade: "",
+  // Campos extras — usados apenas pelo RC003 (estoque de filamentos)
+  material: "", cor: "", diametro: "", pesoKg: "", marca: "",
+});
+
+function ProdutosTab({ data, mutate, user }) {
+  const isFilamentos = user === CODIGO_FILAMENTOS;
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({ nome: "", codigo: "", categoria: "", preco: "", quantidade: "" });
+  const [filtroMaterial, setFiltroMaterial] = useState("");
+  const [form, setForm] = useState(emptyFormProduto());
 
   function openNew() {
     setEditing(null);
-    setForm({ nome: "", codigo: "", categoria: "", preco: "", quantidade: "" });
+    setForm(emptyFormProduto());
     setShowForm(true);
   }
   function openEdit(p) {
     setEditing(p.id);
-    setForm({ nome: p.nome, codigo: p.codigo, categoria: p.categoria, preco: p.preco, quantidade: p.quantidade });
+    setForm({
+      nome: p.nome, codigo: p.codigo, categoria: p.categoria, preco: p.preco, quantidade: p.quantidade,
+      material: p.material || "", cor: p.cor || "", diametro: p.diametro || "", pesoKg: p.pesoKg || "", marca: p.marca || "",
+    });
     setShowForm(true);
   }
   function save(e) {
     e.preventDefault();
     if (!form.nome.trim() || !form.codigo.trim()) return;
+    const extras = isFilamentos
+      ? { material: form.material, cor: form.cor, diametro: form.diametro, pesoKg: Number(form.pesoKg) || 0, marca: form.marca }
+      : {};
     mutate((d) => {
       const produtos = [...d.produtos];
       const movimentacoes = [...d.movimentacoes];
       if (editing) {
         const idx = produtos.findIndex((p) => p.id === editing);
-        produtos[idx] = { ...produtos[idx], nome: form.nome, codigo: form.codigo, categoria: form.categoria, preco: Number(form.preco) || 0 };
+        produtos[idx] = { ...produtos[idx], nome: form.nome, codigo: form.codigo, categoria: form.categoria, preco: Number(form.preco) || 0, ...extras };
       } else {
         const id = nextId(produtos);
         const qtd = Number(form.quantidade) || 0;
-        produtos.push({ id, nome: form.nome, codigo: form.codigo, categoria: form.categoria, preco: Number(form.preco) || 0, quantidade: qtd });
+        produtos.push({ id, nome: form.nome, codigo: form.codigo, categoria: form.categoria, preco: Number(form.preco) || 0, quantidade: qtd, ...extras });
         if (qtd > 0) {
           movimentacoes.push({ id: nextId(movimentacoes), produtoId: id, produtoNome: form.nome, tipo: "entrada", quantidade: qtd, motivo: "Estoque inicial", data: Date.now() });
         }
@@ -376,24 +434,34 @@ function ProdutosTab({ data, mutate }) {
     mutate((d) => ({ ...d, produtos: d.produtos.filter((p) => p.id !== id) }));
   }
 
-  const filtered = data.produtos.filter(
-    (p) => p.nome.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = data.produtos.filter((p) => {
+    const matchBusca = p.nome.toLowerCase().includes(search.toLowerCase()) || p.codigo.toLowerCase().includes(search.toLowerCase());
+    const matchMaterial = isFilamentos && filtroMaterial ? (p.material || "") === filtroMaterial : true;
+    return matchBusca && matchMaterial;
+  });
 
   return (
     <div>
       <PageHeader
-        title="Produtos"
-        subtitle={`${data.produtos.length} produto(s) cadastrado(s)`}
+        title={isFilamentos ? "Filamentos" : "Produtos"}
+        subtitle={`${data.produtos.length} ${isFilamentos ? "filamento(s)" : "produto(s)"} cadastrado(s)`}
         action={
           <button onClick={openNew} className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold rounded-lg px-4 py-2 text-sm flex items-center gap-2">
-            <Plus size={16} /> Novo produto
+            <Plus size={16} /> {isFilamentos ? "Novo filamento" : "Novo produto"}
           </button>
         }
       />
-      <div className="relative mb-4 max-w-xs">
-        <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou código..." className={inputCls + " pl-9"} />
+      <div className="flex flex-wrap gap-3 mb-4">
+        <div className="relative max-w-xs">
+          <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou código..." className={inputCls + " pl-9"} />
+        </div>
+        {isFilamentos && (
+          <select value={filtroMaterial} onChange={(e) => setFiltroMaterial(e.target.value)} className={inputCls + " max-w-[160px]"}>
+            <option value="">Todos os materiais</option>
+            {MATERIAIS_FILAMENTO.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -402,7 +470,16 @@ function ProdutosTab({ data, mutate }) {
             <tr>
               <th className="text-left px-4 py-3">Código</th>
               <th className="text-left px-4 py-3">Nome</th>
-              <th className="text-left px-4 py-3">Categoria</th>
+              {isFilamentos ? (
+                <>
+                  <th className="text-left px-4 py-3">Material</th>
+                  <th className="text-left px-4 py-3">Cor</th>
+                  <th className="text-left px-4 py-3">Diâmetro</th>
+                  <th className="text-left px-4 py-3">Marca</th>
+                </>
+              ) : (
+                <th className="text-left px-4 py-3">Categoria</th>
+              )}
               <th className="text-right px-4 py-3">Preço</th>
               <th className="text-right px-4 py-3">Estoque</th>
               <th className="px-4 py-3"></th>
@@ -413,7 +490,16 @@ function ProdutosTab({ data, mutate }) {
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-mono text-slate-500">{p.codigo}</td>
                 <td className="px-4 py-3 font-medium text-slate-800">{p.nome}</td>
-                <td className="px-4 py-3 text-slate-600">{p.categoria || "-"}</td>
+                {isFilamentos ? (
+                  <>
+                    <td className="px-4 py-3 text-slate-600">{p.material || "-"}</td>
+                    <td className="px-4 py-3 text-slate-600">{p.cor || "-"}</td>
+                    <td className="px-4 py-3 text-slate-600">{p.diametro || "-"}</td>
+                    <td className="px-4 py-3 text-slate-600">{p.marca || "-"}</td>
+                  </>
+                ) : (
+                  <td className="px-4 py-3 text-slate-600">{p.categoria || "-"}</td>
+                )}
                 <td className="px-4 py-3 text-right text-slate-700">{formatBRL(p.preco)}</td>
                 <td className={`px-4 py-3 text-right font-semibold ${p.quantidade <= 5 ? "text-red-600" : "text-slate-700"}`}>{p.quantidade}</td>
                 <td className="px-4 py-3 flex gap-2 justify-end">
@@ -423,14 +509,14 @@ function ProdutosTab({ data, mutate }) {
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="text-center text-slate-400 py-8">Nenhum produto encontrado.</td></tr>
+              <tr><td colSpan={isFilamentos ? 8 : 6} className="text-center text-slate-400 py-8">Nenhum {isFilamentos ? "filamento" : "produto"} encontrado.</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
       {showForm && (
-        <Modal title={editing ? "Editar produto" : "Novo produto"} onClose={() => setShowForm(false)}>
+        <Modal title={editing ? `Editar ${isFilamentos ? "filamento" : "produto"}` : `Novo ${isFilamentos ? "filamento" : "produto"}`} onClose={() => setShowForm(false)}>
           <form onSubmit={save}>
             <Field label="Nome *">
               <input required className={inputCls} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
@@ -438,14 +524,42 @@ function ProdutosTab({ data, mutate }) {
             <Field label="Código (SKU) *">
               <input required className={inputCls} value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })} />
             </Field>
-            <Field label="Categoria">
-              <input className={inputCls} value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} />
-            </Field>
+
+            {isFilamentos ? (
+              <>
+                <Field label="Material">
+                  <select className={inputCls} value={form.material} onChange={(e) => setForm({ ...form, material: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {MATERIAIS_FILAMENTO.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </Field>
+                <Field label="Cor">
+                  <input className={inputCls} value={form.cor} onChange={(e) => setForm({ ...form, cor: e.target.value })} />
+                </Field>
+                <Field label="Diâmetro">
+                  <select className={inputCls} value={form.diametro} onChange={(e) => setForm({ ...form, diametro: e.target.value })}>
+                    <option value="">Selecione...</option>
+                    {DIAMETROS_FILAMENTO.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </Field>
+                <Field label="Peso líquido por rolo (kg)">
+                  <input type="number" step="0.01" min="0" className={inputCls} value={form.pesoKg} onChange={(e) => setForm({ ...form, pesoKg: e.target.value })} />
+                </Field>
+                <Field label="Marca/Fabricante">
+                  <input className={inputCls} value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} />
+                </Field>
+              </>
+            ) : (
+              <Field label="Categoria">
+                <input className={inputCls} value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} />
+              </Field>
+            )}
+
             <Field label="Preço (R$)">
               <input type="number" step="0.01" min="0" className={inputCls} value={form.preco} onChange={(e) => setForm({ ...form, preco: e.target.value })} />
             </Field>
             {!editing && (
-              <Field label="Quantidade inicial em estoque">
+              <Field label={isFilamentos ? "Quantidade inicial em estoque (rolos)" : "Quantidade inicial em estoque"}>
                 <input type="number" min="0" className={inputCls} value={form.quantidade} onChange={(e) => setForm({ ...form, quantidade: e.target.value })} />
               </Field>
             )}
@@ -817,9 +931,9 @@ export default function App() {
     <div className="flex min-h-screen bg-slate-50 font-sans">
       <Sidebar tab={tab} setTab={setTab} user={user} onLogout={() => setUser(null)} />
       <main className="flex-1 p-8 max-w-6xl">
-        {tab === "inicio" && <Inicio data={data} />}
+        {tab === "inicio" && <Inicio data={data} user={user} />}
         {tab === "clientes" && <ClientesTab data={data} mutate={mutate} />}
-        {tab === "produtos" && <ProdutosTab data={data} mutate={mutate} />}
+        {tab === "produtos" && <ProdutosTab data={data} mutate={mutate} user={user} />}
         {tab === "estoque" && <EstoqueTab data={data} mutate={mutate} />}
         {tab === "vendas" && <VendasTab data={data} mutate={mutate} user={user} />}
       </main>
