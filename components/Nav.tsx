@@ -22,6 +22,7 @@ const groups = [
       { href: "/chocolates/produtos", label: "Produtos" },
       { href: "/chocolates/compras", label: "Compras" },
       { href: "/chocolates/consignados", label: "Consignados" },
+      { href: "/chocolates/estoque", label: "Estoque geral" },
     ],
   },
 ];

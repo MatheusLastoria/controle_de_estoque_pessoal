@@ -4,32 +4,34 @@ import { useEffect, useState } from "react";
 import { Card, Button, Input, Select, EmptyState } from "@/components/ui";
 import { formatMoney, formatDate } from "@/lib/utils";
 
-type Produto = { id: string; marca: string; sabor: string; tamanho: string; custo: number };
-type Venda = {
-  id: string;
-  quantidade: number;
-  valorUnitario: number;
-  data: string;
-  produto: Produto;
-};
+type Produto = { id: string; marca: string; sabor: string; tamanho: string; custo: number; estoqueAtual: number };
+type Venda = { id: string; quantidade: number; valorUnitario: number; data: string; produto: Produto };
+type Entrega = { id: string; quantidade: number; data: string; produto: Produto };
 type Consignado = {
   id: string;
   nome: string;
   comissaoPercentual: number;
   vendas: Venda[];
+  entregas: Entrega[];
 };
+
+function produtoLabel(p: Produto) {
+  return `${p.marca} ${p.sabor} ${p.tamanho}`;
+}
 
 export default function ConsignadosPage() {
   const [consignados, setConsignados] = useState<Consignado[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFormConsignado, setShowFormConsignado] = useState(false);
-  const [showFormVenda, setShowFormVenda] = useState<string | null>(null); // id do consignado
+  const [showFormVenda, setShowFormVenda] = useState<string | null>(null);
+  const [showFormEntrega, setShowFormEntrega] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const todayISO = new Date().toISOString().slice(0, 10);
 
   const [formConsignado, setFormConsignado] = useState({ nome: "", comissaoPercentual: "" });
   const [formVenda, setFormVenda] = useState({ produtoId: "", quantidade: "1", valorUnitario: "", data: todayISO });
+  const [formEntrega, setFormEntrega] = useState({ produtoId: "", quantidade: "1", data: todayISO });
 
   async function load() {
     setLoading(true);
@@ -66,6 +68,11 @@ export default function ConsignadosPage() {
     load();
   }
 
+  function produtoIdFromLabel(label: string) {
+    const p = produtos.find((x) => produtoLabel(x) === label);
+    return p ? p.id : "";
+  }
+
   async function handleSubmitVenda(e: React.FormEvent, consignadoId: string) {
     e.preventDefault();
     if (!formVenda.produtoId || !formVenda.quantidade || !formVenda.valorUnitario) return;
@@ -92,19 +99,63 @@ export default function ConsignadosPage() {
     load();
   }
 
-  function totais(c: Consignado) {
+  async function handleSubmitEntrega(e: React.FormEvent, consignadoId: string) {
+    e.preventDefault();
+    if (!formEntrega.produtoId || !formEntrega.quantidade) return;
+    setSaving(true);
+    await fetch("/api/entregas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        produtoId: formEntrega.produtoId,
+        consignadoId,
+        quantidade: Number(formEntrega.quantidade),
+        data: formEntrega.data,
+      }),
+    });
+    setFormEntrega({ produtoId: "", quantidade: "1", data: todayISO });
+    setShowFormEntrega(null);
+    setSaving(false);
+    load();
+  }
+
+  async function handleDeleteEntrega(id: string) {
+    await fetch(`/api/entregas/${id}`, { method: "DELETE" });
+    load();
+  }
+
+  function totaisFinanceiros(c: Consignado) {
     const bruto = c.vendas.reduce((s, v) => s + v.quantidade * v.valorUnitario, 0);
     const comissao = bruto * c.comissaoPercentual;
     const liquido = bruto - comissao;
     return { bruto, comissao, liquido };
   }
 
-  const produtoOptions = produtos.map((p) => `${p.marca} ${p.sabor} ${p.tamanho}`);
+  // Estoque local por produto neste consignado = soma(entregas) - soma(vendas)
+  function estoquePorProduto(c: Consignado) {
+    const map = new Map<string, { produto: Produto; entrada: number; vendas: number }>();
+    c.entregas.forEach((en) => {
+      const cur = map.get(en.produto.id) ?? { produto: en.produto, entrada: 0, vendas: 0 };
+      cur.entrada += en.quantidade;
+      map.set(en.produto.id, cur);
+    });
+    c.vendas.forEach((v) => {
+      const cur = map.get(v.produto.id) ?? { produto: v.produto, entrada: 0, vendas: 0 };
+      cur.vendas += v.quantidade;
+      map.set(v.produto.id, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => produtoLabel(a.produto).localeCompare(produtoLabel(b.produto)));
+  }
 
-  const totalGeral = consignados.reduce((acc, c) => {
-    const t = totais(c);
-    return { bruto: acc.bruto + t.bruto, comissao: acc.comissao + t.comissao, liquido: acc.liquido + t.liquido };
-  }, { bruto: 0, comissao: 0, liquido: 0 });
+  const produtoOptions = produtos.map(produtoLabel);
+
+  const totalGeral = consignados.reduce(
+    (acc, c) => {
+      const t = totaisFinanceiros(c);
+      return { bruto: acc.bruto + t.bruto, comissao: acc.comissao + t.comissao, liquido: acc.liquido + t.liquido };
+    },
+    { bruto: 0, comissao: 0, liquido: 0 }
+  );
 
   return (
     <div className="space-y-6">
@@ -117,6 +168,11 @@ export default function ConsignadosPage() {
         </div>
         <Button onClick={() => setShowFormConsignado((v) => !v)}>{showFormConsignado ? "Cancelar" : "Novo consignado"}</Button>
       </header>
+
+      <p className="text-xs text-muted">
+        Fluxo do estoque: em <strong>Produtos</strong> fica o estoque em casa (ainda não enviado a ninguém). Aqui, <strong>Registrar entrada</strong> transfere unidades de casa para este consignado
+        (inclusive Shopee, que "recebe" pra despachar). <strong>Registrar venda</strong> dá baixa no estoque que já está com o consignado, sem mexer no estoque de casa.
+      </p>
 
       {showFormConsignado && (
         <Card>
@@ -137,7 +193,8 @@ export default function ConsignadosPage() {
       ) : (
         <ul className="space-y-4">
           {consignados.map((c) => {
-            const t = totais(c);
+            const t = totaisFinanceiros(c);
+            const estoques = estoquePorProduto(c);
             return (
               <li key={c.id}>
                 <Card className="space-y-4">
@@ -149,7 +206,22 @@ export default function ConsignadosPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Button variant="ghost" onClick={() => setShowFormVenda(showFormVenda === c.id ? null : c.id)}>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setShowFormEntrega(showFormEntrega === c.id ? null : c.id);
+                          setShowFormVenda(null);
+                        }}
+                      >
+                        {showFormEntrega === c.id ? "Cancelar" : "Registrar entrada"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setShowFormVenda(showFormVenda === c.id ? null : c.id);
+                          setShowFormEntrega(null);
+                        }}
+                      >
                         {showFormVenda === c.id ? "Cancelar" : "Registrar venda"}
                       </Button>
                       <button onClick={() => handleDeleteConsignado(c.id)} className="focus-ring text-xs text-muted hover:text-alert">
@@ -158,42 +230,105 @@ export default function ConsignadosPage() {
                     </div>
                   </div>
 
+                  {showFormEntrega === c.id && (
+                    <form onSubmit={(e) => handleSubmitEntrega(e, c.id)} className="grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
+                      <Select
+                        label="Produto"
+                        options={["Selecione...", ...produtoOptions]}
+                        value={formEntrega.produtoId ? produtoLabel(produtos.find((p) => p.id === formEntrega.produtoId)!) : "Selecione..."}
+                        onChange={(e) => setFormEntrega({ ...formEntrega, produtoId: produtoIdFromLabel(e.target.value) })}
+                      />
+                      <Input label="Quantidade enviada" type="number" min="1" value={formEntrega.quantidade} onChange={(e) => setFormEntrega({ ...formEntrega, quantidade: e.target.value })} required />
+                      <Input label="Data" type="date" value={formEntrega.data} onChange={(e) => setFormEntrega({ ...formEntrega, data: e.target.value })} />
+                      <div className="sm:col-span-2">
+                        <Button type="submit" disabled={saving || !formEntrega.produtoId}>{saving ? "Salvando..." : "Registrar entrada"}</Button>
+                      </div>
+                    </form>
+                  )}
+
                   {showFormVenda === c.id && (
                     <form onSubmit={(e) => handleSubmitVenda(e, c.id)} className="grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
                       <Select
                         label="Produto"
                         options={["Selecione...", ...produtoOptions]}
-                        value={formVenda.produtoId ? `${produtos.find((p) => p.id === formVenda.produtoId)?.marca} ${produtos.find((p) => p.id === formVenda.produtoId)?.sabor} ${produtos.find((p) => p.id === formVenda.produtoId)?.tamanho}` : "Selecione..."}
-                        onChange={(e) => {
-                          const idx = produtoOptions.indexOf(e.target.value);
-                          setFormVenda({ ...formVenda, produtoId: idx >= 0 ? produtos[idx].id : "" });
-                        }}
+                        value={formVenda.produtoId ? produtoLabel(produtos.find((p) => p.id === formVenda.produtoId)!) : "Selecione..."}
+                        onChange={(e) => setFormVenda({ ...formVenda, produtoId: produtoIdFromLabel(e.target.value) })}
                       />
-                      <Input label="Quantidade" type="number" min="1" value={formVenda.quantidade} onChange={(e) => setFormVenda({ ...formVenda, quantidade: e.target.value })} required />
+                      <Input label="Quantidade vendida" type="number" min="1" value={formVenda.quantidade} onChange={(e) => setFormVenda({ ...formVenda, quantidade: e.target.value })} required />
                       <Input label="Valor unitário de venda (R$)" type="number" step="0.01" min="0" value={formVenda.valorUnitario} onChange={(e) => setFormVenda({ ...formVenda, valorUnitario: e.target.value })} required />
                       <Input label="Data" type="date" value={formVenda.data} onChange={(e) => setFormVenda({ ...formVenda, data: e.target.value })} />
                       <div className="sm:col-span-2">
-                        <Button type="submit" disabled={saving || !formVenda.produtoId}>{saving ? "Salvando..." : "Registrar"}</Button>
+                        <Button type="submit" disabled={saving || !formVenda.produtoId}>{saving ? "Salvando..." : "Registrar venda"}</Button>
                       </div>
                     </form>
                   )}
 
-                  {c.vendas.length > 0 && (
-                    <ul className="space-y-1 border-t border-line pt-3 text-xs text-muted">
-                      {c.vendas.map((v) => (
-                        <li key={v.id} className="flex items-center justify-between">
-                          <span>
-                            {v.produto.marca} {v.produto.sabor} {v.produto.tamanho} · {v.quantidade}x {formatMoney(v.valorUnitario)} · {formatDate(v.data)}
-                          </span>
-                          <span className="flex items-center gap-3">
-                            {formatMoney(v.quantidade * v.valorUnitario)}
-                            <button onClick={() => handleDeleteVenda(v.id)} className="focus-ring hover:text-alert">
-                              remover
-                            </button>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                  {estoques.length > 0 && (
+                    <div className="border-t border-line pt-3">
+                      <p className="mb-2 text-xs font-medium text-muted">Estoque neste consignado</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-muted">
+                              <th className="py-1 pr-3 font-medium">Produto</th>
+                              <th className="py-1 pr-3 font-medium">Entrada</th>
+                              <th className="py-1 pr-3 font-medium">Vendas</th>
+                              <th className="py-1 pr-3 font-medium">Estoque</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {estoques.map((e) => (
+                              <tr key={e.produto.id} className="border-t border-line/60">
+                                <td className="py-1 pr-3 text-ink">{produtoLabel(e.produto)}</td>
+                                <td className="py-1 pr-3">{e.entrada}</td>
+                                <td className="py-1 pr-3">{e.vendas}</td>
+                                <td className={`py-1 pr-3 font-medium ${e.entrada - e.vendas < 0 ? "text-alert" : "text-ink"}`}>
+                                  {e.entrada - e.vendas}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {(c.vendas.length > 0 || c.entregas.length > 0) && (
+                    <div className="grid gap-4 border-t border-line pt-3 sm:grid-cols-2">
+                      {c.entregas.length > 0 && (
+                        <div>
+                          <p className="mb-1 text-xs font-medium text-muted">Entradas (enviado para cá)</p>
+                          <ul className="space-y-1 text-xs text-muted">
+                            {c.entregas.map((en) => (
+                              <li key={en.id} className="flex items-center justify-between">
+                                <span>{produtoLabel(en.produto)} · {en.quantidade}x · {formatDate(en.data)}</span>
+                                <button onClick={() => handleDeleteEntrega(en.id)} className="focus-ring hover:text-alert">
+                                  remover
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {c.vendas.length > 0 && (
+                        <div>
+                          <p className="mb-1 text-xs font-medium text-muted">Vendas registradas</p>
+                          <ul className="space-y-1 text-xs text-muted">
+                            {c.vendas.map((v) => (
+                              <li key={v.id} className="flex items-center justify-between">
+                                <span>{produtoLabel(v.produto)} · {v.quantidade}x {formatMoney(v.valorUnitario)} · {formatDate(v.data)}</span>
+                                <span className="flex items-center gap-3">
+                                  {formatMoney(v.quantidade * v.valorUnitario)}
+                                  <button onClick={() => handleDeleteVenda(v.id)} className="focus-ring hover:text-alert">
+                                    remover
+                                  </button>
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </Card>
               </li>

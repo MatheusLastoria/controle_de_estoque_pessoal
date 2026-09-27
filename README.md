@@ -20,16 +20,17 @@ app/
   chocolates/
     produtos/page.tsx        → Cadastro de produtos (marca, sabor, tamanho, custo, estoque)
     compras/page.tsx         → Registro de compras (produto, frete, cupom, investimento)
-    consignados/page.tsx     → Plataformas/parceiros de consignação, comissão e vendas por produto
+    consignados/page.tsx     → Plataformas/parceiros de consignação, comissão, entradas e vendas por produto
+    estoque/page.tsx         → Visão geral: estoque em casa + estoque em cada consignado + total
   api/                       → Rotas REST (GET/POST/PUT/DELETE) para cada entidade
 components/
   ui.tsx                     → Input, Select, Button, Card, EmptyState
-  Nav.tsx                    → Navegação lateral/superior
+  Nav.tsx                    → Navegação em pastas: PESSOAL e IMPORTADOS LASTORIA
 lib/
   prisma.ts                  → Cliente Prisma
   utils.ts                   → Formatação de moeda/data e cálculos de mês
 prisma/
-  schema.prisma              → Modelos: Renda, GastoFixo, GastoVariavel, Evento, Produto, Compra, Consignado, Venda
+  schema.prisma              → Modelos: Renda, GastoFixo, GastoVariavel, Evento, Produto, Compra, Consignado, Venda, Entrega
 ```
 
 ## Rodando localmente
@@ -87,9 +88,14 @@ Baseado na planilha de controle de chocolates (`Produto`, `Compras`, `Controle`,
 
 - **Produtos**: cadastro de marca, sabor, tamanho e custo unitário. O estoque atual pode ser editado diretamente na lista (compra recebida, ajuste manual etc.).
 - **Compras**: cada compra registra valor dos produtos, frete, cupom/desconto e "investimento" (embalagens, banners, cartões de visita etc. — o que na planilha aparece na aba Investimento). O card mostra o custo total já líquido do cupom.
-- **Consignados**: cada plataforma/parceiro (Shopee, mercado livre, uma pessoa que revende etc.) tem uma comissão/desconto percentual própria. Ao registrar uma venda para um consignado, o sistema:
-  - dá baixa automática no estoque do produto vendido;
-  - calcula o valor bruto, a comissão (gasto) e o líquido recebido daquele consignado — equivalente às colunas "Entrada/Vendas/Estoque" e aos percentuais de "Consignação/Shopee" da planilha.
+- **Consignados**: cada plataforma/parceiro (Shopee, mercado livre, uma pessoa que revende etc.) tem uma comissão/desconto percentual própria. O estoque agora tem duas etapas, iguais à planilha:
+  - **Estoque em casa** (`Produto.estoqueAtual`): o que ainda não foi mandado para ninguém — é o "inventário restando" usado para abastecer qualquer consignado, inclusive o Shopee.
+  - **Entrada** (nova, modelo `Entrega`): registra o envio de X unidades de casa para um consignado específico. Isso reduz o estoque em casa e "aparece" como estoque local daquele consignado.
+  - **Venda**: dá baixa no estoque local do consignado (soma de entradas − soma de vendas ali), sem mexer de novo no estoque de casa — a mesma lógica das colunas Entrada/Vendas/Estoque da aba Estoque da planilha, por consignado.
+  - A página de Consignados mostra, para cada um, uma tabelinha por produto com Entrada / Vendas / Estoque, além dos totais financeiros (bruto, comissão, líquido).
+- **Estoque geral** (nova página): uma visão única com todos os produtos nas linhas e, nas colunas, o estoque em casa + o estoque atual em cada consignado + o total geral (casa + todos os locais somados) — o resumo que a aba Estoque da planilha dava de forma manual.
 - O cabeçalho da página de consignados soma tudo: total bruto vendido, total pago em comissões e o líquido — o mesmo papel da aba Controle (Ganhos totais / Gasto compra / Lucro), mas calculado automaticamente a partir das vendas lançadas, em vez de digitado à mão.
 
-Depois de colar o novo `schema.prisma`, rode `npx prisma db push` novamente para criar as tabelas `Produto`, `Compra`, `Consignado` e `Venda` no banco.
+Depois de colar o novo `schema.prisma`, rode `npx prisma db push` novamente para criar/atualizar as tabelas `Produto`, `Compra`, `Consignado`, `Venda` e `Entrega` no banco.
+
+**Atenção:** se você já tinha vendas cadastradas com a versão anterior (quando "Venda" dava baixa direto no estoque de casa), o estoque em casa pode estar defasado depois dessa mudança. Vale conferir e ajustar manualmente o campo "Estoque em casa" de cada produto na página Produtos após atualizar.

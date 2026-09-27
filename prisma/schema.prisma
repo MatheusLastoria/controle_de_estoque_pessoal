@@ -46,14 +46,15 @@ model Evento {
 // ---- Módulo Chocolates ----
 
 model Produto {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   marca        String
   sabor        String
   tamanho      String
   custo        Float
-  estoqueAtual Int      @default(0)
-  criadoEm     DateTime @default(now())
+  estoqueAtual Int       @default(0) // estoque em casa, ainda não enviado a nenhum consignado
+  criadoEm     DateTime  @default(now())
   vendas       Venda[]
+  entregas     Entrega[]
 }
 
 model Compra {
@@ -69,13 +70,15 @@ model Compra {
 }
 
 model Consignado {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   nome               String
-  comissaoPercentual Float    @default(0) // ex: 0.2 = 20%
-  criadoEm           DateTime @default(now())
+  comissaoPercentual Float     @default(0) // ex: 0.2 = 20%
+  criadoEm           DateTime  @default(now())
   vendas             Venda[]
+  entregas           Entrega[]
 }
 
+// Venda: o que foi vendido em um consignado (dá baixa no estoque LOCAL daquele consignado)
 model Venda {
   id             String     @id @default(cuid())
   produtoId      String
@@ -86,4 +89,17 @@ model Venda {
   valorUnitario  Float
   data           DateTime   @default(now())
   criadoEm       DateTime   @default(now())
+}
+
+// Entrega: transferência de estoque de casa para um consignado (a coluna "Entrada" da planilha).
+// Reduz o estoque em casa (Produto.estoqueAtual) e aumenta o estoque local daquele consignado.
+model Entrega {
+  id           String     @id @default(cuid())
+  produtoId    String
+  produto      Produto    @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  consignadoId String
+  consignado   Consignado @relation(fields: [consignadoId], references: [id], onDelete: Cascade)
+  quantidade   Int
+  data         DateTime   @default(now())
+  criadoEm     DateTime   @default(now())
 }

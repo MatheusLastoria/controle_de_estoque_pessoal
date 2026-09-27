@@ -4,7 +4,10 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   const consignados = await prisma.consignado.findMany({
     orderBy: { nome: "asc" },
-    include: { vendas: { include: { produto: true } } },
+    include: {
+      vendas: { include: { produto: true }, orderBy: { data: "desc" } },
+      entregas: { include: { produto: true }, orderBy: { data: "desc" } },
+    },
   });
   return NextResponse.json(consignados);
 }

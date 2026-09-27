@@ -79,7 +79,7 @@ export default function ProdutosPage() {
             <Input label="Sabor / variante" placeholder="Ex: Milk Crunch" value={form.sabor} onChange={(e) => setForm({ ...form, sabor: e.target.value })} required />
             <Input label="Tamanho" placeholder="Ex: 60g" value={form.tamanho} onChange={(e) => setForm({ ...form, tamanho: e.target.value })} required />
             <Input label="Custo unitário (R$)" type="number" step="0.01" min="0" value={form.custo} onChange={(e) => setForm({ ...form, custo: e.target.value })} required />
-            <Input label="Estoque inicial" type="number" min="0" value={form.estoqueAtual} onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })} />
+            <Input label="Estoque inicial em casa" type="number" min="0" value={form.estoqueAtual} onChange={(e) => setForm({ ...form, estoqueAtual: e.target.value })} />
             <div className="sm:col-span-2">
               <Button type="submit" disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
             </div>
@@ -102,7 +102,7 @@ export default function ProdutosPage() {
                 </div>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-xs text-muted">
-                    Estoque
+                    Estoque em casa
                     <input
                       type="number"
                       min="0"
