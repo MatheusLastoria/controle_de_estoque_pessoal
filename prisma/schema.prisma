@@ -42,3 +42,48 @@ model Evento {
   observacao     String?
   criadoEm       DateTime  @default(now())
 }
+
+// ---- Módulo Chocolates ----
+
+model Produto {
+  id           String   @id @default(cuid())
+  marca        String
+  sabor        String
+  tamanho      String
+  custo        Float
+  estoqueAtual Int      @default(0)
+  criadoEm     DateTime @default(now())
+  vendas       Venda[]
+}
+
+model Compra {
+  id             String   @id @default(cuid())
+  data           DateTime @default(now())
+  fornecedor     String?
+  valorProdutos  Float
+  frete          Float    @default(0)
+  cupomDesconto  Float    @default(0)
+  investimento   Float    @default(0) // embalagens, etiquetas, banners etc.
+  observacao     String?
+  criadoEm       DateTime @default(now())
+}
+
+model Consignado {
+  id                 String   @id @default(cuid())
+  nome               String
+  comissaoPercentual Float    @default(0) // ex: 0.2 = 20%
+  criadoEm           DateTime @default(now())
+  vendas             Venda[]
+}
+
+model Venda {
+  id             String     @id @default(cuid())
+  produtoId      String
+  produto        Produto    @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  consignadoId   String
+  consignado     Consignado @relation(fields: [consignadoId], references: [id], onDelete: Cascade)
+  quantidade     Int
+  valorUnitario  Float
+  data           DateTime   @default(now())
+  criadoEm       DateTime   @default(now())
+}

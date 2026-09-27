@@ -9,6 +9,9 @@ const links = [
   { href: "/gastos-fixos", label: "Gastos fixos" },
   { href: "/gastos-variaveis", label: "Gastos variáveis" },
   { href: "/calendario", label: "Calendário" },
+  { href: "/chocolates/produtos", label: "Produtos (chocolates)" },
+  { href: "/chocolates/compras", label: "Compras" },
+  { href: "/chocolates/consignados", label: "Consignados" },
 ];
 
 export default function Nav() {
