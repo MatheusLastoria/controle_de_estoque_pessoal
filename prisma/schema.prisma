@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Renda {
+  id        String   @id @default(cuid())
+  nome      String
+  valor     Float
+  criadoEm  DateTime @default(now())
+}
+
+model GastoFixo {
+  id          String   @id @default(cuid())
+  nome        String
+  valor       Float
+  diaVencimento Int
+  categoria   String
+  status      String   @default("pendente") // "pago" | "pendente"
+  criadoEm    DateTime @default(now())
+}
+
+model GastoVariavel {
+  id        String   @id @default(cuid())
+  nome      String
+  valor     Float
+  categoria String?
+  data      DateTime @default(now())
+  criadoEm  DateTime @default(now())
+}
+
+model Evento {
+  id             String    @id @default(cuid())
+  nome           String
+  data           DateTime
+  valorPlanejado Float
+  valorGasto     Float?
+  observacao     String?
+  criadoEm       DateTime  @default(now())
+}

@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: #F6F7F4;
+  color: #16211B;
+}
+
+::selection {
+  background: #2F6F4E;
+  color: #fff;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid #2F6F4E;
+  outline-offset: 2px;
+}
